@@ -1,0 +1,27 @@
+#!/bin/bash
+
+data="$1"
+clipboard=$( xclip -o 2>/dev/null )
+output=$HOME/tmp/qr.data
+
+if [ ! -z "$data" ];then
+    tbe="$data"
+elif [ ! -z "$clipboard" ];then
+    tbe="$clipboard"
+else
+    exit
+fi
+
+if [ -f "$tbe" ]; then
+    IP_ADDR=$(ip addr show wlan0 | grep inet | head -n1 | awk '{ print $2 }' | cut -d\/ -f1)
+    URL="http://${IP_ADDR}:8000/${tbe}"
+    echo "$URL" | qrencode -t UTF8 -s 10
+    filesize=$(stat -c "%s" $tbe)
+    mimetype=$(file -b --mime-type $tbe)
+    echo -e "HTTP/1.0 200 OK\r\nContent-Length: ${filesize}\r\nContent-Type: ${mimetype}\r\n" > $output
+    cat $tbe >> $output
+    cat "$output" | nc -l -p 8000 >/dev/null
+    rm $output
+else
+    echo "$tbe" | qrencode -t UTF8 -s 10
+fi
