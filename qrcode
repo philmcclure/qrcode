@@ -2,7 +2,16 @@
 
 data="$1"
 clipboard=$( xclip -o 2>/dev/null )
+interface=$(ip link show | grep wl | awk '{ print $2 }' | sed 's/://')
 output=$HOME/tmp/qr.data
+trap ctrl_c SIGINT
+
+ctrl_c() {
+    if [ -e $output ]; then
+        rm $output
+    fi
+    exit
+}
 
 if [ ! -z "$data" ];then
     tbe="$data"
@@ -12,17 +21,34 @@ else
     exit
 fi
 
+IP_ADDR=$(ip addr show $interface | grep inet | head -n1 | awk '{ print $2 }' | cut -d\/ -f1)
+
 if [ -f "$tbe" ]; then
-    IP_ADDR=$(ip addr show wlan0 | grep inet | head -n1 | awk '{ print $2 }' | cut -d\/ -f1)
     FILENAME=$(echo "$tbe" | sed 's/\ /%20/g')
     URL="http://${IP_ADDR}:8000/${FILENAME}"
+    echo "$URL"
     echo "$URL" | qrencode -t UTF8 -s 10
     filesize=$(stat -c "%s" "$tbe")
     mimetype=$(file -b --mime-type "$tbe")
+    if [ "$mimetype" = "audio/mpeg" ]; then
+        mimetype="application/octet-stream"
+    fi
     echo -e "HTTP/1.0 200 OK\r\nContent-Length: ${filesize}\r\nContent-Type: ${mimetype}\r\n" > $output
     cat "$tbe" >> $output
     cat "$output" | nc -l -p 8000 >/dev/null
     rm $output
+elif [ -d "$tbe" ]; then
+    FILENAME=$(echo "$tbe" | sed 's/\ /%20/g' | sed 's/$/\.tar\.gz/')
+    URL="http://${IP_ADDR}:8000/${FILENAME}"
+    echo "$URL"
+    echo "$URL" | qrencode -t UTF8 -s 10
+    tar -czf "${data}.tar.gz" "${data}"
+    filesize=$(stat -c "%s" "${data}.tar.gz")
+    mimetype=$(file -b --mime-type "${data}.tar.gz")
+    echo -e "HTTP/1.0 200 OK\r\nContent-Length: ${filesize}\r\nContent-Type: ${mimetype}\r\n" > $output
+    cat "${data}.tar.gz" >> $output
+    cat "$output" | nc -l -p 8000 >/dev/null
+    rm $output ${data}.tar.gz
 else
     echo "$tbe" | qrencode -t UTF8 -s 10
 fi
